@@ -44,8 +44,11 @@ library TickOrderBookManager {
     error InvalidTickSpacing();
     error InvalidWordsPerTick();
 
-    /// @notice Constants
-    uint8 constant MAX_TICKS_PER_MATCH = 20; // Limit ticks scanned per match for gas safety
+    /// @notice Constants - OPTIMIZATION: Dynamic limits for better gas efficiency
+    uint8 constant MAX_QUICK_TICKS = 5;   // Reduced from 20 for small orders
+    uint8 constant MAX_DEEP_TICKS = 15;   // For large orders
+    uint8 constant MAX_TOTAL_TICKS = 25;  // Safety limit
+    uint8 constant MAX_TICKS_PER_MATCH = 20; // Legacy constant for compatibility
 
     /// @notice Initialize tick books for a pool
     /// @param self The tick books storage
@@ -275,6 +278,9 @@ library TickOrderBookManager {
     ) internal returns (OrderBookTypes.MatchResult memory result) {
         if (!self.initialized) revert NotInitialized();
 
+        // OPTIMIZATION: Use adaptive tick scanning based on order size
+        uint8 tickLimit = amountIn > 10 ether ? MAX_DEEP_TICKS : MAX_QUICK_TICKS;
+        
         uint128 remaining = amountIn;
         uint256 totalCost = 0;
         uint256 totalOrdersMatched = 0;
@@ -295,7 +301,9 @@ library TickOrderBookManager {
 
             uint8 ticksScanned = 0;
 
-            while (remaining > 0 && tick != type(int24).max && ticksScanned < MAX_TICKS_PER_MATCH) {
+            while (remaining > 0 && tick != type(int24).max && ticksScanned < tickLimit) {
+                // OPTIMIZATION: Early exit if remaining amount is very small
+                if (remaining < 1000) break; // Less than 0.000001 ETH
                 OrderBookTypes.Book storage book = self.books[tick];
 
                 if (book.initialized) {
@@ -358,7 +366,9 @@ library TickOrderBookManager {
 
             uint8 ticksScanned = 0;
 
-            while (remaining > 0 && tick != type(int24).min && ticksScanned < MAX_TICKS_PER_MATCH) {
+            while (remaining > 0 && tick != type(int24).min && ticksScanned < tickLimit) {
+                // OPTIMIZATION: Early exit if remaining amount is very small
+                if (remaining < 1000) break; // Less than 0.000001 ETH
                 OrderBookTypes.Book storage book = self.books[tick];
 
                 if (book.initialized) {

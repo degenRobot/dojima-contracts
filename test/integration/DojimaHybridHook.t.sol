@@ -13,6 +13,7 @@ import {Currency} from "infinity-core/src/types/Currency.sol";
 import {IHooks} from "infinity-core/src/interfaces/IHooks.sol";
 import {CLPoolParametersHelper} from "infinity-core/src/pool-cl/libraries/CLPoolParametersHelper.sol";
 import {PoolId, PoolIdLibrary} from "infinity-core/src/types/PoolId.sol";
+import {BalanceDelta} from "infinity-core/src/types/BalanceDelta.sol";
 
 contract DojimaHybridHookTest is Test {
     using CLPoolParametersHelper for bytes32;
@@ -225,7 +226,7 @@ contract DojimaHybridHookTest is Test {
 
         // Bob tries to cancel (should revert)
         vm.prank(bob);
-        vm.expectRevert(DojimaHybridHook.NotOrderMaker.selector);
+        vm.expectRevert("Not order maker");
         hook.cancelOrder(orderId, poolKey);
 
         console.log("[PASS] Cannot cancel others' orders");
@@ -356,5 +357,74 @@ contract DojimaHybridHookTest is Test {
         // Note: depth tracking might be simplified for now
         // Just verify it doesn't revert
         console.log("[PASS] getTickDepth executed successfully");
+    }
+
+    function test_HybridExecution_PriceImprovement() public {
+        console.log("Testing that limit orders provide better prices than market rate...");
+        
+        // Setup: Place limit orders at attractive prices
+        vm.startPrank(alice);
+        uint256 order1 = hook.placeOrder(poolKey, 0.99e18, 10 ether, false);   // Sell at 1% discount
+        uint256 order2 = hook.placeOrder(poolKey, 0.995e18, 10 ether, false);  // Sell at 0.5% discount
+        vm.stopPrank();
+        
+        // Verify orders were placed
+        OrderBookTypes.Order memory orderData1 = hook.getOrder(order1, poolKey);
+        OrderBookTypes.Order memory orderData2 = hook.getOrder(order2, poolKey);
+        
+        assertEq(orderData1.maker, alice, "Order 1 maker should be alice");
+        assertEq(orderData2.maker, alice, "Order 2 maker should be alice");
+        assertEq(orderData1.filled, 0, "Order 1 should be unfilled initially");
+        assertEq(orderData2.filled, 0, "Order 2 should be unfilled initially");
+        
+        // Test optimal routing recommendation
+        (uint128 clobAmount, uint128 ammAmount, uint256 expectedPrice) = hook.getOptimalRouting(poolKey, 15 ether, true);
+        
+        console.log("Optimal routing for 15 ether buy:");
+        console.log("CLOB amount:", clobAmount);
+        console.log("AMM amount:", ammAmount);
+        console.log("Expected price:", expectedPrice);
+        
+        // Should recommend using available CLOB liquidity (we have 20 ether total at good prices)
+        assertGt(clobAmount, 0, "Should recommend using some CLOB liquidity");
+        assertEq(clobAmount + ammAmount, 15 ether, "Total should equal requested amount");
+        
+        // Verify the expected price is better than 1.0 (market rate)
+        (, uint256 marketPrice) = hook.getBestAsk(poolKey);
+        console.log("Market price from getBestAsk:", marketPrice);
+        
+        // Verify that the best ask price is better than 1.0 ETH (since we placed orders at 0.99 and 0.995)
+        assertLt(marketPrice, 1e18, "Best ask should be better than 1.0 ETH");
+        
+        console.log("[PASS] Limit orders provide better prices than market rate");
+    }
+
+    function test_ExplicitRouting() public {
+        console.log("Testing explicit routing functions...");
+        
+        // Setup: Place limit order
+        vm.startPrank(alice);
+        hook.placeOrder(poolKey, 0.99e18, 10 ether, false);  // Sell at 1% discount
+        vm.stopPrank();
+        
+        // Test getOptimalRouting
+        (uint128 clobAmount, uint128 ammAmount, uint256 expectedPrice) = hook.getOptimalRouting(poolKey, 15 ether, true);
+        
+        console.log("Optimal routing for 15 ether buy:");
+        console.log("CLOB amount:", clobAmount);
+        console.log("AMM amount:", ammAmount);
+        console.log("Expected price:", expectedPrice);
+        
+        // Verify it recommends using available CLOB liquidity
+        assertGt(clobAmount, 0, "Should recommend using some CLOB liquidity");
+        assertEq(clobAmount + ammAmount, 15 ether, "Total should equal requested amount");
+        
+        // Test explicit routing execution (simplified - just verify the function works)
+        vm.startPrank(bob);
+        // Use smaller amounts for testing
+        hook.swapWithExplicitRouting(poolKey, 5 ether, 0, true, 1.1e18);
+        vm.stopPrank();
+        
+        console.log("[PASS] Explicit routing functions work correctly");
     }
 }

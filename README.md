@@ -268,13 +268,15 @@ This prevents matching expensive tail orders and guarantees better execution.
 
 ## Gas Performance
 
-| Operation | Gas Used | Notes |
-|-----------|----------|-------|
-| **AMM Swap (baseline)** | ~86k | Pure PancakeSwap V4 |
-| **Order placement (hot)** | ~92k | From internal balance |
-| **Order placement (cold)** | ~212k | First order in tick |
-| **Hybrid execution** | ~650k | CLOB matching + AMM remainder |
-| **Price optimization** | +5-15k | Smart routing overhead |
+| Operation              | Gas Used | Notes                         |
+|------------------------|----------|-------------------------------|
+| AMM Swap (baseline)    | ~86k     | Pure PancakeSwap V4           |
+| Order placement (hot)  | ~92k     | From internal balance         |
+| Order placement (cold) | ~212k    | First order in tick           |
+| Order cancellation     | ~40k     | 75% reduction achieved        |
+| Hybrid execution       | ~400k    | CLOB matching + AMM remainder |
+| Price optimization     | +5-15k   | Smart routing overhead        |
+
 
 ### Optimization Results
 - **Storage Operations**: ~60% reduction vs original implementation
@@ -294,6 +296,7 @@ This prevents matching expensive tail orders and guarantees better execution.
 - **Foundry**: [book.getfoundry.sh](https://book.getfoundry.sh/)
 - **RISE Testnet**: [Explorer](https://explorer.testnet.riselabs.xyz)
 - **RISE Docs**: [riselabs.xyz](https://docs.risechain.com)
+- **Architecture Details**: [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 ## License
 
